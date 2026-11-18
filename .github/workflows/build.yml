@@ -44,8 +44,8 @@ jobs:
       - name: Install Gradle
         run: |
           if [ ! -d "$HOME/gradle-$GRADLE_VERSION" ]; then
-            curl -fsSL "https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip" -o gradle.zip
-            unzip -q gradle.zip -d "$HOME"
+            curl -fsSL "https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip" -o "$RUNNER_TEMP/gradle.zip"
+            unzip -q "$RUNNER_TEMP/gradle.zip" -d "$HOME"
           fi
           "$HOME/gradle-$GRADLE_VERSION/bin/gradle" --version
 
