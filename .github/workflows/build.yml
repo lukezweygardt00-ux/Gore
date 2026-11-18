@@ -1,0 +1,80 @@
+name: Build Minecraft Mods
+
+# Put this file at: .github/workflows/build.yml
+# Upload any mod .zip (MegaTntMod.zip, RealisticGoreMod.zip, ...) to the ROOT of the repo
+# and every zip there gets built. Download the jars from the run's "Artifacts" section.
+
+on:
+  push:
+    paths:
+      - "*.zip"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+env:
+  GRADLE_VERSION: "5.6.4"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Forge 1.7.10 (ForgeGradle 1.2) only works on Java 8
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/gradle-${{ env.GRADLE_VERSION }}
+          key: gradle-forge-1.7.10-${{ hashFiles('*.zip') }}
+          restore-keys: |
+            gradle-forge-1.7.10-
+
+      # The old official ForgeGradle 1.2 can't download anything anymore (dead URLs).
+      # anatawa12's fork is the maintained version that works with modern Gradle.
+      - name: Install Gradle
+        run: |
+          if [ ! -d "$HOME/gradle-$GRADLE_VERSION" ]; then
+            curl -fsSL "https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip" -o gradle.zip
+            unzip -q gradle.zip -d "$HOME"
+          fi
+          "$HOME/gradle-$GRADLE_VERSION/bin/gradle" --version
+
+      - name: Build every zip in the repo root
+        env:
+          GRADLE_OPTS: -Xmx2g
+        run: |
+          shopt -s nullglob
+          ZIPS=(*.zip)
+          if [ ${#ZIPS[@]} -eq 0 ]; then echo "::error::No .zip found in repo root"; exit 1; fi
+          mkdir -p out
+          for Z in "${ZIPS[@]}"; do
+            NAME="${Z%.zip}"
+            echo "=================== Building $Z ==================="
+            mkdir -p "_work/$NAME"
+            unzip -q "$Z" -d "_work/$NAME"
+            PD=$(dirname "$(find "_work/$NAME" -name build.gradle | head -n 1)")
+            F="$PD/build.gradle"
+            sed -i 's#http://files.minecraftforge.net/maven#https://maven.minecraftforge.net/#g' "$F"
+            sed -i "s#classpath 'net.minecraftforge.gradle:ForgeGradle:1.2-SNAPSHOT'#classpath('com.anatawa12.forge:ForgeGradle:1.2-1.1.+') { changing = true }#" "$F"
+            sed -n '1,20p' "$F"
+            ( cd "$PD" && "$HOME/gradle-$GRADLE_VERSION/bin/gradle" setupCIWorkspace build --no-daemon --stacktrace )
+            cp "$PD"/build/libs/*.jar out/
+          done
+          ls -la out
+
+      - name: Upload mod jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-jars
+          path: out/*.jar
+          if-no-files-found: error
